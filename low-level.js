@@ -67,7 +67,7 @@ function _setStorageHandler(_storageHandler) {
 	storageHandler = _storageHandler
 }
 
-async function oAuthInit(username, password) {
+async function oAuthInit(username, password, config) {
 	const options = {
 		responseType: 'json',
 	    'method': 'POST',
@@ -77,8 +77,8 @@ async function oAuthInit(username, password) {
 	        'Accept': 'application/json'
 	    },
 	    form: {
-	        'client_id': CLIENT_ID,
-	        'client_secret': CLIENT_SECRET,
+	        'client_id': config.CLIENT_ID,
+	        'client_secret': config.CLIENT_SECRET,
 	        'grant_type': 'password',
 	        'username': username,
 	        'password': password
@@ -113,6 +113,7 @@ async function validateSesssionTAN(sessionUUID) {
 	        'Accept': 'application/json',
 	        'Authorization': 'AUTO-INJECT',
 	        'x-http-request-info': 'AUTO-INJECTED',
+			'x-once-authentication-info': '{"typ":"P_TAN"}',
 	        'Content-Type': 'application/json'
 	    },
 	  	body: JSON.stringify({
@@ -150,18 +151,18 @@ async function activateSesssionTAN(tan, challengeId, sessionUUID) {
 	return response.body
 }
 
-async function oAuthSecondaryFlow() {
+async function oAuthSecondaryFlow(config) {
 	const options = {
 		responseType: 'json',
 	    'method': 'POST',
-	    'url': '/oauth/token',
+	    'url': 'oauth/token',
 	    'headers': {
 	        'Content-Type': 'application/x-www-form-urlencoded',
 	        'Accept': 'application/json'
 	    },
 	    form: {
-	        'client_id': CLIENT_ID,
-	        'client_secret': CLIENT_SECRET,
+	        'client_id': config.CLIENT_ID,
+	        'client_secret': config.CLIENT_SECRET,
 	        'grant_type': 'cd_secondary',
 	        'token': 'AUTO-INJECT'
 	    }
@@ -170,7 +171,7 @@ async function oAuthSecondaryFlow() {
 	return response.body
 }
 
-async function refreshTokenFlow() {
+async function refreshTokenFlow(config) {
 	const {refresh_token} = storageHandler.load()
 	const options = {
 	  responseType: 'json',
@@ -181,8 +182,8 @@ async function refreshTokenFlow() {
 	    'Accept': 'application/json'
 	  },
 	  form: {
-	    'client_id': CLIENT_ID,
-	    'client_secret': CLIENT_SECRET,
+	    'client_id': config.CLIENT_ID,
+	    'client_secret': config.CLIENT_SECRET,
 	    'grant_type': 'refresh_token',
 	    'refresh_token': refresh_token
 	  }
@@ -212,7 +213,7 @@ async function getAccountInfo(access_token) {
 	return body.values.map(a => a.accountId)
 }
 
-async function getTransactions(accountId, paging, minDate, maxDate) {
+async function getTransactions(accountId, paging, minDate, maxDate) { // @see https://community.comdirect.de/t5/website-apps/rest-api-filter-parameter/td-p/108710/page/3
 	let searchParams = ''
 	const array = []
 	if (paging) {
@@ -225,7 +226,7 @@ async function getTransactions(accountId, paging, minDate, maxDate) {
 		array.push(['max-bookingDate', maxDate])
 	}
 	if (paging > 0) {
-		array.push(['transactionState', 'BOOKED'])
+		array.push(['transactionState', 'BOOKED']) // Paging is only valid for booked account transactions
 		const tmp = new URLSearchParams(array)
 		searchParams = '?' + tmp.toString()
 	}

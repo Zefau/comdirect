@@ -11,44 +11,51 @@ const {
 const utils = require('./utils')
 
 const MINUTES_19 = 1000 * 60 * 19
-const DEFAULT_PORT = 8089
 
 const reference = {}
 let needAuthentication = true
 
-function start(config = {autoRefresh: false, webhook: false, port: DEFAULT_PORT}) {
+function start(config = {autoRefresh: false, webhook: false, port: null}) {
+	
+	
 	return new Promise(async function(mainResolve, mainReject) {
-		if (config.port == null) config.port = process.env.PORT || DEFAULT_PORT
-		const baseUrl = `http://localhost:${config.port}`
-		const server = createServer(config, (error, data) => {
-			if (error) {
-				return mainReject(error)
-			}
-			return mainResolve(data)
-		})
-		server.listen(config.port)
-		console.log('listen on port', config.port)
-
+		let baseUrl = null;
+		if (config.port) {
+			baseUrl = `http://localhost:${config.port}`
+			const server = createServer(config, (error, data) => {
+				if (error) {
+					return mainReject(error)
+				}
+				return mainResolve(data)
+			})
+			server.listen(config.port)
+			console.log('listen on port', config.port)
+		}
+		
 		let result = null
 		if (config.webhook === false) {
-			result = await loadUserData(reference, `${baseUrl}/challenge`, function() {
-				return utils.getInput('Zugangsnummer/Username: ')
-			}, function() {
-				return utils.getInput('PIN/Password: ', true)
-			}, function() {
-				return utils.getInput('TAN: ')
-			})
+			result = await loadUserData(
+				reference,
+				{
+					...config,
+					'username': () => config.user ? Promise.resolve(config.user) : utils.getInput('Zugangsnummer/Username: '),
+					'password': () => config.password ? Promise.resolve(config.password) : utils.getInput('PIN/Password: ', true),
+					'tan': () => utils.getInput('TAN: ')
+				}
+			)
+			
 			if (config.autoRefresh) {
-				setInterval(triggerTokenRefresh, MINUTES_19)
+				setInterval(triggerTokenRefresh, MINUTES_19, config)
 			}
 			return mainResolve(result)
-		} else {
+		}
+		else {
 			result = await loadUserData()
 			if (result == null) {
 				console.log(`waiting for webhook, login via on: ${baseUrl}`)
 			} else {
 				if (config.autoRefresh) {
-					setInterval(triggerTokenRefresh, MINUTES_19)
+					setInterval(triggerTokenRefresh, MINUTES_19, config)
 				}
 				return mainResolve(result)
 			}
@@ -149,7 +156,7 @@ function createServer(config = {autoRefresh: false, webhook: false}, callback) {
 					console.log('authentication was successful')
 					needAuthentication = false
 					if (config.autoRefresh) {
-						setInterval(triggerTokenRefresh, MINUTES_19)
+						setInterval(triggerTokenRefresh, MINUTES_19, config)
 					}
 					callback(null, data)
 				})
@@ -172,15 +179,16 @@ function createServer(config = {autoRefresh: false, webhook: false}, callback) {
 	return server
 }
 
-function triggerTokenRefresh() {
-	refreshTokenFlow()
-	.then(status => {
-		console.log('refresh token was updated')
-	}).catch(error => {
-		console.error(error)
-		console.log('Stopping server and application')
-		process.exit(1)
-	})
+function triggerTokenRefresh(config) {
+	refreshTokenFlow(config)
+		.then(status => {
+			console.log('refresh token was updated')
+		})
+		.catch(error => {
+			console.error(error)
+			console.log('Stopping server and application')
+			process.exit(1)
+		});
 }
 
 module.exports = {

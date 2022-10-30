@@ -47,8 +47,8 @@ function save(object) {
 }
 _setStorageHandler({load: load, save: save})
 
-async function loadUserData(reference, challengeUrl, username, password, tan) {
-	const data = await getValidCredentials(reference, challengeUrl, username, password, tan)
+async function loadUserData(reference, config) {
+	const data = await getValidCredentials(reference, config)
 	if (data == null) {
 		return null // for webhook
 	}
@@ -61,7 +61,7 @@ async function loadUserData(reference, challengeUrl, username, password, tan) {
 }
 
 // refresh access token if needed
-async function refreshTokenFlowIfNeeded() {
+async function refreshTokenFlowIfNeeded(config) {
 	try {
 		await getAccountInfo()
 		return {status: 'still valid'}
@@ -76,7 +76,7 @@ async function refreshTokenFlowIfNeeded() {
 	}
 }
 
-async function getValidCredentials(reference, challengeUrl, username, password, tan) {
+async function getValidCredentials(reference, config) {
 	const data = load()
 	try {
 		// try access token
@@ -99,32 +99,36 @@ async function getValidCredentials(reference, challengeUrl, username, password, 
 		// ignore (refresh token has expired)
 	}
 	// initial/very first run will do this
-	return await runOAuthFlow(reference, challengeUrl, username, password, tan)
+	return await runOAuthFlow(reference, config)
 }
 
-async function runOAuthFlow(reference, challengeUrl, username, password, tan) {
-	if (username == null || password == null || tan == null) {
+async function runOAuthFlow(reference, config) {
+	if (config.username == null || config.password == null || config.tan == null) {
 		return null // for webhook
 	}
-	const _username = await username()
-	const _password = await password()
-	const oAuthResponse = await oAuthInit(_username, _password)
+	const _username = await config.username()
+	const _password = await config.password()
+	const oAuthResponse = await oAuthInit(_username, _password, config)
+	
 	const sessionId =  utils.guid()
 	const requestId = utils.requestId()
 	save({sessionId, requestId})
+	
 	const sessionStatus = await getSessionStatus() 
 	const sessionUUID = sessionStatus[0].identifier
 	const validationResponse = await validateSesssionTAN(sessionUUID)
+	
 	if (validationResponse.headers['x-once-authentication-info'] != null) {
 		const header = JSON.parse(validationResponse.headers['x-once-authentication-info'])
 		if (DEBUG) console.log('x-once-authentication-info', header)
 		if (header.id != null && header.typ == 'P_TAN' && header.challenge != null) {
 			reference.challenge = header.challenge
-			console.log(`Please solve the photoTAN with your browser: ${challengeUrl}`)
-			const _tan = await tan()
+			console.log(!config.challengeUrl ? 'data:image/png;base64,' + header.challenge : `Please solve the photoTAN with your browser: ${challengeUrl}`)
+			
+			const _tan = await config.tan()
 			const activatedSession = await activateSesssionTAN(_tan, header.id, sessionStatus[0].identifier)
 			if (activatedSession.sessionTanActive === true) {
-				const finalRespone = await oAuthSecondaryFlow()
+				const finalRespone = await oAuthSecondaryFlow(config)
 				return Object.assign({}, load(), {kdnr: finalRespone.kdnr} )
 			} else {
 				throw new Error('photoTAN was not successful')
